@@ -1,0 +1,6 @@
+{
+  "appTitle": "geo_bird",
+  "@appTitle": {
+    "description": "The title of the application"
+  }
+}
