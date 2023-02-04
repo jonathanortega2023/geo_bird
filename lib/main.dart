@@ -56,18 +56,67 @@ class _PhotoPageState extends State<PhotoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(child: _capturePhotoWidget());
+    return Scaffold(
+        body: Stack(
+      children: [
+        StreamBuilder(
+          builder: (context, snapshot) {
+            return Center(child: CameraPreview(controller!));
+          },
+          stream: _cameraPreviewWidget().asStream(),
+        ),
+        Transform.scale(
+          scale: 3,
+          alignment: Alignment.bottomCenter,
+          child: _capturePhotoWidget(),
+        )
+        // Opacity(opacity: 1, child: _capturePhotoWidget())
+      ],
+    ));
+  }
+
+  Future<Widget> _cameraPreviewWidget() async {
+    final CameraController? cameraController = controller;
+
+    try {
+      await controller?.initialize();
+    } on CameraException catch (e) {
+      _handleFailedCameraInit(e);
+    }
+    return CameraPreview(
+      controller!,
+      child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (TapDownDetails details) =>
+              onViewFinderTap(details, constraints),
+        );
+      }),
+    );
+  }
+
+  void onViewFinderTap(TapDownDetails details, BoxConstraints constraints) {
+    if (controller == null) {
+      return;
+    }
+
+    final CameraController cameraController = controller!;
+
+    final Offset offset = Offset(
+      details.localPosition.dx / constraints.maxWidth,
+      details.localPosition.dy / constraints.maxHeight,
+    );
+    cameraController.setExposurePoint(offset);
+    cameraController.setFocusPoint(offset);
   }
 
   Widget _capturePhotoWidget() {
-    final CameraController? cameraController = controller;
-
-    return Scaffold(
-      body: Center(
-        child: IconButton(
-          icon: const Icon(Icons.camera_outlined),
-          onPressed: onTakePictureButtonPressed,
-        ),
+    return Container(
+      alignment: Alignment.bottomCenter,
+      child: IconButton(
+        icon: const Icon(Icons.camera_outlined),
+        onPressed: onTakePictureButtonPressed,
       ),
     );
   }
