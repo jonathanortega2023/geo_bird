@@ -7,18 +7,16 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=2.18.4 <3.0.0'
+  sdk: '>=2.19.0 <3.0.0'
 
 dependencies:
-  bloc: ^8.1.0
   camera: ^0.10.3
   flutter:
     sdk: flutter
-  flutter_bloc: ^8.1.1
   flutter_localizations:
     sdk: flutter
+  flutter_typeahead: ^4.3.3
   geolocator: ^9.0.2
-  video_player: ^2.5.1
 
 dev_dependencies:
   flutter_test:

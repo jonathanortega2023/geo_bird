@@ -1,14 +1,19 @@
+import 'dart:io';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import './services/geo.dart';
 
 List<CameraDescription> _cameras = <CameraDescription>[];
 Future<void> main() async {
   // Fetch the available cameras before initializing the app.
   try {
+    WidgetsFlutterBinding.ensureInitialized();
     _cameras = await availableCameras();
     runApp(MaterialApp(home: PhotoPage()));
   } on CameraException catch (e) {
@@ -49,15 +54,136 @@ class PhotoPage extends StatefulWidget {
 }
 
 class _PhotoPageState extends State<PhotoPage> {
+  late PageController pageController = PageController();
   CameraController? controller =
       CameraController(_cameras.first, ResolutionPreset.max);
   XFile? imageFile;
   Position? geoPosition;
+  late String birdSpecies;
+
+  List<String> speciesList = ["Birb", "Cardinal", "Penguin"];
+  @override
+  void initState() {
+    try {
+      determinePosition().then((Position? position) {
+        setState(() {
+          geoPosition = position;
+        });
+        print('''
+                Lat: ${geoPosition.toString()}
+                Accuracy: ${geoPosition!.accuracy}
+                GeoTimestamp: ${geoPosition!.timestamp}
+                ''');
+      });
+    } on GeolocatorException catch (e) {
+      _logError(e.code, e.message);
+      showInSnackBar(e.message);
+    } on Exception catch (e) {
+      print(e.toString());
+      showInSnackBar(e.toString());
+    }
+
+    try {
+      controller?.initialize();
+    } on CameraException catch (e) {
+      _handleFailedCameraInit(e);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-        body: Stack(
+    return SafeArea(
+      child: Scaffold(
+          body: imageFile == null ? takePhotoScreen() : submitPhotoPages()),
+    );
+  }
+
+  PageView submitPhotoPages() {
+    Column verifyPhoto() {
+      return Column(
+        children: [
+          Image.file(File(imageFile!.path)),
+          ButtonBar(
+            alignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                  onPressed: () {
+                    setState(() {
+                      imageFile = null;
+                      geoPosition = null;
+                      controller = CameraController(
+                          _cameras.first, ResolutionPreset.max);
+                    });
+                  },
+                  child: const Text("Retake")),
+              TextButton(
+                  onPressed: () {
+                    pageController.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInCubic);
+                  },
+                  child: const Text("Add species")),
+            ],
+          )
+        ],
+      );
+    }
+
+    Column addSpecies() {
+      return Column(
+        children: [
+          TypeAheadField(
+            animationStart: 1,
+            itemBuilder: (context, suggestion) {
+              return ListTile(
+                title: Text(suggestion.toString()),
+              );
+            },
+            onSuggestionSelected: (suggestion) {
+              birdSpecies = suggestion.toString();
+              pageController.nextPage(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInCubic);
+            },
+            suggestionsCallback: (String pattern) {
+              return _getSuggestions(pattern);
+            },
+          ),
+          ButtonBar(
+            alignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                  onPressed: () {
+                    pageController.previousPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInCubic);
+                  },
+                  child: const Text("Back")),
+              TextButton(
+                  onPressed: () {
+                    pageController.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInCubic);
+                  },
+                  child: const Text("Review")),
+            ],
+          )
+        ],
+      );
+    }
+
+    Text confirmSubmission() {
+      return Text("Cancel or Submit");
+    }
+
+    return PageView(
+      controller: pageController,
+      children: [verifyPhoto(), addSpecies(), confirmSubmission()],
+    );
+  }
+
+  Stack takePhotoScreen() {
+    return Stack(
       children: [
         StreamBuilder(
           builder: (context, snapshot) {
@@ -65,26 +191,21 @@ class _PhotoPageState extends State<PhotoPage> {
           },
           stream: _cameraPreviewWidget().asStream(),
         ),
-        Transform.scale(
-          scale: 3,
-          alignment: Alignment.bottomCenter,
-          child: _capturePhotoWidget(),
-        )
+        _capturePhotoWidget(),
         // Opacity(opacity: 1, child: _capturePhotoWidget())
       ],
-    ));
+    );
   }
 
   Future<Widget> _cameraPreviewWidget() async {
-    final CameraController? cameraController = controller;
-
+    CameraController? cameraController = controller;
     try {
-      await controller?.initialize();
+      await cameraController?.initialize();
     } on CameraException catch (e) {
       _handleFailedCameraInit(e);
     }
     return CameraPreview(
-      controller!,
+      cameraController!,
       child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
         return GestureDetector(
@@ -115,7 +236,9 @@ class _PhotoPageState extends State<PhotoPage> {
     return Container(
       alignment: Alignment.bottomCenter,
       child: IconButton(
-        icon: const Icon(Icons.camera_outlined),
+        icon: const Icon(
+          Icons.camera_outlined,
+        ),
         onPressed: onTakePictureButtonPressed,
       ),
     );
@@ -127,25 +250,8 @@ class _PhotoPageState extends State<PhotoPage> {
     } on CameraException catch (e) {
       _handleFailedCameraInit(e);
     }
+
     takePicture().then((XFile? file) {
-      try {
-        determinePosition().then((Position? position) {
-          setState(() {
-            geoPosition = position;
-          });
-          print('''
-                Lat: ${geoPosition.toString()}
-                Accuracy: ${geoPosition!.accuracy}
-                GeoTimestamp: ${geoPosition!.timestamp}
-                ''');
-        });
-      } on GeolocatorException catch (e) {
-        _logError(e.code, e.message);
-        showInSnackBar(e.message);
-      } on Exception catch (e) {
-        print(e.toString());
-        showInSnackBar(e.toString());
-      }
       if (mounted && geoPosition != null) {
         setState(() {
           imageFile = file;
@@ -174,6 +280,7 @@ class _PhotoPageState extends State<PhotoPage> {
 
     try {
       final XFile file = await cameraController.takePicture();
+      cameraController.dispose();
       return file;
     } on CameraException catch (e) {
       _logError(e.code, e.description);
@@ -210,5 +317,12 @@ class _PhotoPageState extends State<PhotoPage> {
         _showCameraException(e);
         break;
     }
+  }
+
+  List<String> _getSuggestions(String pattern) {
+    List<String> matches = [];
+    matches.addAll(speciesList);
+    matches.retainWhere((s) => s.toLowerCase().contains(pattern.toLowerCase()));
+    return matches;
   }
 }
